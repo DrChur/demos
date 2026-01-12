@@ -1,0 +1,6 @@
+{
+  "supabase": {
+    "url": "YOUR_SUPABASE_URL_HERE",
+    "anonKey": "YOUR_SUPABASE_PUBLISHABLE_KEY_HERE"
+  }
+}

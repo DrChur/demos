@@ -1,0 +1,20 @@
+{
+  "name": "band-demos-app",
+  "version": "0.1.0",
+  "description": "Music band demo sharing app with Supabase backend",
+  "type": "module",
+  "scripts": {
+    "test-connection": "node test-connection.js",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.3",
+    "vue": "^3.4.15"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "vite": "^5.0.11"
+  }
+}
