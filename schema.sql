@@ -18,6 +18,7 @@ create table if not exists projects (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   invite_code text not null default generate_invite_code(),
+  icon_url text,
   created_at timestamptz not null default now()
 );
 
@@ -33,6 +34,10 @@ create table if not exists songs (
   id uuid primary key default gen_random_uuid(),
   project_id uuid not null references projects(id) on delete cascade,
   title text not null,
+  file_url text not null,
+  file_size bigint,
+  file_type text,
+  duration integer,
   created_by uuid not null,
   created_at timestamptz not null default now()
 );
@@ -42,7 +47,8 @@ create table if not exists song_versions (
   project_id uuid not null references projects(id) on delete cascade,
   song_id uuid not null references songs(id) on delete cascade,
   version_number integer not null,
-  content text not null,
+  file_url text not null,
+  original_file_url text,
   created_by uuid not null,
   created_at timestamptz not null default now()
 );

@@ -1,10 +1,15 @@
 import { createApp } from 'vue';
+import { createPinia } from 'pinia';
 import App from './App.vue';
 import { initSupabase } from './supabase.js';
 
 // Initialize Supabase before mounting the app
 initSupabase().then(() => {
-  createApp(App).mount('#app');
+  const app = createApp(App);
+  const pinia = createPinia();
+  
+  app.use(pinia);
+  app.mount('#app');
 }).catch((error) => {
   console.error('Failed to initialize Supabase:', error);
   document.body.innerHTML = `

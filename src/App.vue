@@ -7,14 +7,24 @@
     <template v-else-if="!authLoading && user">
       <header class="app-header">
         <div class="header-content">
-          <div>
-            <h1>🎵 Band Demos</h1>
-            <p class="subtitle">Share and stream your music</p>
+          <div class="left-section">
+            <ProjectSwitcher v-if="hasProjects" />
+            <div v-else>
+              <h1>🎵 Band Demos</h1>
+              <p class="subtitle">Share and stream your music</p>
+            </div>
           </div>
           <div class="user-section">
             <span class="user-name">
               {{ user.user_metadata?.display_name || user.email }}
             </span>
+            <button 
+              v-if="activeProject"
+              @click="showSettings = true" 
+              class="settings-button"
+            >
+              ⚙️ Settings
+            </button>
             <button @click="showProfile = true" class="profile-button">
               👤 Profile
             </button>
@@ -34,19 +44,24 @@
           <p class="hint">Make sure your config.json is set up correctly.</p>
         </div>
 
-        <div v-else-if="projects.length === 0" class="empty-state">
+        <div v-else-if="!hasProjects" class="empty-state">
           <h3>📭 No Projects Yet</h3>
-          <p>Start by creating your first project!</p>
+          <p>Create a new project or join one using an invite code.</p>
         </div>
 
-        <div v-else class="projects-grid">
-          <div v-for="project in projects" :key="project.id" class="project-card">
-            <h3>{{ project.name }}</h3>
-            <div class="project-details">
-              <p><strong>Invite Code:</strong> {{ project.invite_code }}</p>
-              <p><strong>Members:</strong> {{ project.member_count || 0 }}</p>
-              <p><strong>Created:</strong> {{ formatDate(project.created_at) }}</p>
-            </div>
+        <div v-else-if="activeProject" class="project-dashboard">
+          <div class="dashboard-header">
+            <h2>{{ activeProject.name }}</h2>
+            <p class="dashboard-subtitle">{{ activeProject.member_count || 0 }} members</p>
+          </div>
+          
+          <div class="dashboard-content">
+            <SongList 
+              :current-song="currentSong"
+              :is-playing="isPlaying"
+              @play-song="handlePlaySong"
+              @pause-song="handlePauseSong"
+            />
           </div>
         </div>
       </main>
@@ -61,6 +76,23 @@
         :user="user" 
         @close="showProfile = false"
       />
+
+      <!-- Project Settings Modal -->
+      <ProjectSettingsModal
+        v-if="showSettings && activeProject"
+        :project="activeProject"
+        @close="showSettings = false"
+      />
+
+      <!-- Audio Player -->
+      <AudioPlayer 
+        v-if="currentSong"
+        ref="audioPlayerRef"
+        :current-song="currentSong"
+        :playlist="[]"
+        @song-change="handleSongChange"
+        @playing-change="handlePlayingChange"
+      />
     </template>
 
     <!-- Loading state during auth check -->
@@ -73,86 +105,73 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue';
-import { initSupabase, getSupabase } from './supabase.js';
 import { useAuth } from './composables/useAuth.js';
+import { useProjectStore } from './stores/projectStore.js';
+import { storeToRefs } from 'pinia';
 import LoginView from './components/LoginView.vue';
 import ProfileSettings from './components/ProfileSettings.vue';
+import ProjectSwitcher from './components/ProjectSwitcher.vue';
+import ProjectSettingsModal from './components/ProjectSettingsModal.vue';
+import SongList from './components/SongList.vue';
+import AudioPlayer from './components/AudioPlayer.vue';
 
 const { user, loading: authLoading, initAuth } = useAuth();
+const projectStore = useProjectStore();
+const { projects, activeProject, loading, error, hasProjects } = storeToRefs(projectStore);
 
-const projects = ref([]);
-const loading = ref(true);
-const error = ref(null);
 const showProfile = ref(false);
+const showSettings = ref(false);
 
-async function loadProjects() {
-  try {
-    loading.value = true;
-    error.value = null;
+const audioPlayerRef = ref(null);
+const currentSong = ref(null);
+const isPlaying = ref(false);
 
-    const supabase = getSupabase();
-
-    // Fetch projects (without nested project_members to avoid RLS recursion)
-    const { data, error: fetchError } = await supabase
-      .from('projects')
-      .select('id, name, invite_code, created_at')
-      .order('created_at', { ascending: false });
-
-    if (fetchError) {
-      throw new Error(fetchError.message);
+function handlePlaySong(song) {
+  // If it's the same song, just resume playback
+  if (currentSong.value?.id === song.id) {
+    isPlaying.value = true;
+    // Resume playback on the existing audio element
+    if (audioPlayerRef.value?.audioElement) {
+      audioPlayerRef.value.audioElement.play().catch(err => {
+        console.error('Error resuming playback:', err);
+      });
     }
-
-    // Fetch member counts separately for each project
-    if (data && data.length > 0) {
-      const projectsWithCounts = await Promise.all(
-        data.map(async (project) => {
-          const { count } = await supabase
-            .from('project_members')
-            .select('*', { count: 'exact', head: true })
-            .eq('project_id', project.id);
-          
-          return {
-            ...project,
-            member_count: count || 0
-          };
-        })
-      );
-      
-      projects.value = projectsWithCounts;
-    } else {
-      projects.value = data || [];
-    }
-  } catch (err) {
-    error.value = err.message;
-    console.error('Error loading projects:', err);
-  } finally {
-    loading.value = false;
+  } else {
+    // Different song - let the watch handler take care of it
+    currentSong.value = song;
+    isPlaying.value = true;
   }
 }
 
-function formatDate(dateString) {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
+function handlePauseSong() {
+  isPlaying.value = false;
+  // Actually pause the audio element
+  if (audioPlayerRef.value?.audioElement) {
+    audioPlayerRef.value.audioElement.pause();
+  }
+}
+
+function handleSongChange(song) {
+  currentSong.value = song;
+}
+
+function handlePlayingChange(playing) {
+  isPlaying.value = playing;
 }
 
 // Watch for user changes and reload projects
 watch(user, (newUser) => {
   if (newUser) {
-    loadProjects();
-  } else {
-    projects.value = [];
+    projectStore.loadProjects();
   }
 });
 
 onMounted(async () => {
-  // Supabase is already initialized in main.js
   await initAuth();
   
   if (user.value) {
-    loadProjects();
+    await projectStore.loadProjects();
+    projectStore.initFromStorage();
   }
 });
 </script>
@@ -181,6 +200,10 @@ onMounted(async () => {
   gap: 1rem;
 }
 
+.left-section {
+  flex: 1;
+}
+
 .app-header h1 {
   font-size: 2rem;
   color: #333;
@@ -203,7 +226,7 @@ onMounted(async () => {
   font-size: 0.9rem;
 }
 
-.profile-button {
+.profile-button, .settings-button {
   padding: 0.6rem 1.2rem;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -215,13 +238,18 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-.profile-button:hover {
+.profile-button:hover, .settings-button:hover {
   transform: translateY(-2px);
+}
+
+.settings-button {
+  background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
 }
 
 .main-content {
   flex: 1;
   padding: 2rem;
+  padding-bottom: 120px; /* Space for audio player */
   max-width: 1200px;
   margin: 0 auto;
   width: 100%;
@@ -269,38 +297,43 @@ onMounted(async () => {
   color: #666;
 }
 
-.projects-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1.5rem;
+.project-dashboard {
+  width: 100%;
 }
 
-.project-card {
+.dashboard-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.dashboard-header h2 {
+  color: #333;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-subtitle {
+  color: #666;
+  font-size: 1rem;
+}
+
+.dashboard-content {
   background: rgba(255, 255, 255, 0.95);
   border-radius: 12px;
-  padding: 1.5rem;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  padding: 2rem;
+  min-height: 400px;
 }
 
-.project-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-}
-
-.project-card h3 {
-  color: #333;
-  margin-bottom: 1rem;
-  font-size: 1.3rem;
-}
-
-.project-details {
+.placeholder-content {
+  text-align: center;
+  padding: 3rem;
   color: #666;
-  font-size: 0.9rem;
 }
 
-.project-details p {
-  margin: 0.5rem 0;
+.placeholder-content .hint {
+  font-size: 0.85rem;
+  color: #999;
+  margin-top: 0.5rem;
 }
 
 .app-footer {
